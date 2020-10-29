@@ -1,0 +1,67 @@
+library(reshape2)
+library(ggplot2)
+library(scales)
+
+###################################################################
+#####Identifying and removing contaminant OTUs normalized data#####
+###################################################################
+
+#read in OTU table generated in mothur
+otu = t(read.table("/Users/anny/Documents/Bioinformatics_scripts/R_scripts/RSS_16S/inputFiles/RSS.final.OTU_table", header = FALSE)) 
+colnames(otu) = otu[2, ]
+otu=otu[-c(1,2,3), ] 
+otu.n=apply(otu[,2:ncol(otu)], 2, as.numeric)
+row.names(otu.n)=otu[,1]
+OTU.noConta=as.data.frame(otu.n)
+#write.table(OTU.noConta, "/Users/anny/Documents/GitHub/RSS_16S/RSS_OTU_table.txt", quote = FALSE, row.names = TRUE, sep = "\t")
+
+tax = read.csv("/Users/anny/Documents/Bioinformatics_scripts/R_scripts/RSS_16S/inputFiles/RSS.final.taxonomy", header = TRUE, sep = "\t")
+tax$Taxonomy = gsub("[(0-9)]", "", tax$Taxonomy) 
+tax$Taxonomy = gsub("[a-z]__", "", tax$Taxonomy) 
+tax[c('Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species')] <- colsplit(tax$Taxonomy,';',c('Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species'))
+tax=tax[, -c(3)]
+
+#############################################################
+#####Taxonomic profiles of the 20 most abundant families#####
+#############################################################
+
+names(OTU.noConta)
+otu.tax=OTU.noConta[,c(6:73)] #define sample range, leave field out
+tax$OTU=as.character(tax$OTU)
+otu.tax$Family=tax$Family[match(rownames(otu.tax), tax$OTU)]
+names(otu.tax)
+otu.tax.ag=aggregate(otu.tax[, 1:68], by = list(otu.tax[, 69]), FUN =  sum) #define sample range and group factor
+topFamilies=otu.tax.ag[order(rowSums(otu.tax.ag[, 2:ncol(otu.tax.ag)]),decreasing = TRUE),][1:20,1]
+fam.top=subset(otu.tax.ag, otu.tax.ag$Group.1 %in% topFamilies) 
+fam.bot=subset(otu.tax.ag, !otu.tax.ag$Group.1 %in% topFamilies) 
+fam.bot$Group.1=gsub(".*","zOthers", fam.bot$Group.1)
+others=aggregate(fam.bot[, 2:ncol(fam.bot)], by = list(fam.bot[, 1]), FUN =  sum)
+all.2 =rbind(fam.top, others)
+all.l=melt(all.2, id.vars=c("Group.1"), variable.name = "Family", value.name = "Abundance")
+colnames(all.l)=c("Family","Sample","Abundance")
+all.l$Sample=gsub("\\.","-", all.l$Sample)
+
+## Add sample information
+meta = read.table("/Users/anny/Documents/Bioinformatics_scripts/R_scripts/RSS_16S/inputFiles/RSS_metadata.txt", header = TRUE, sep = "\t")
+all.l$Experiment=meta$Experiment[match(all.l$Sample, meta$ID)]
+all.l$Time=meta$Time[match(all.l$Sample, meta$ID)]
+all.l$Temperature=meta$Temperature[match(all.l$Sample, meta$ID)]
+all.l$Genotype=meta$Genotype[match(all.l$Sample, meta$ID)]
+all.l.1=subset(all.l, Experiment == "CB")
+all.l.2=subset(all.l, Experiment  == "RSS")
+
+
+## Plot
+P21=c("#771155", "#AA4488", "#CC99BB", "#114477", "#4477AA", "#77AADD", "#117777", "#44AAAA", "#77CCCC", "#117744", "#44AA77", "#88CCAA", "#777711", "#AAAA44", "#DDDD77", "#774411", "#AA7744", "#DDAA77", "#771122", "#AA4455", "#C0C0C0")
+
+cb=ggplot() +geom_bar(aes(y = Abundance, x = Genotype, fill = Family), data = all.l.1, stat="identity", position = "fill") +  scale_y_continuous(labels = percent_format(), expand = c(0, 0)) + theme(axis.text.x=element_text(angle=90,hjust=1)) + labs( y= "Percentage of 16S rRNA sequences", x="Host colony") + scale_fill_manual(values=P21) + facet_grid( Time ~ Temperature) + theme(legend.position = "none",  plot.title = element_text(hjust = 0.5))  + labs(title="short-term heat stress") + theme_classic()
+rs=ggplot() +geom_bar(aes(y = Abundance, x = Genotype, fill = Family), data = all.l.2, stat="identity", position = "fill")  +  scale_y_continuous(labels = percent_format(), expand = c(0, 0)) + theme(axis.text.x=element_text(angle=90,hjust=1)) + labs( y= "", x="Host colony") + scale_fill_manual(values=P21) + facet_grid(Time ~ Temperature) + theme(legend.position = "none", plot.title = element_text(hjust = 0.5)) + labs(title="long-term heat stress") + theme_classic()
+
+pdf("/Users/anny/Documents/Bioinformatics_scripts/R_scripts/RSS_16S/output_plots/CBASSvsRSS_barplots.pdf", onefile = TRUE, width=12,height=5, pointsize = 12)
+grid.arrange(cb, rs, ncol = 2)
+dev.off() 
+
+
+pdf("/Users/anny/Documents/Bioinformatics_scripts/R_scripts/RSS_16S/output_plots/labels_barplots.pdf", onefile = TRUE, width=15,height=5)
+ggplot() +geom_bar(aes(y = Abundance, x = Genotype, fill = Family), data = all.l, stat="identity", position = "fill") +  scale_y_continuous(labels = percent_format(), expand = c(0, 0)) + theme(axis.text.x=element_text(angle=90,hjust=1)) + labs( y= "Percentage of 16S rRNA sequences", x="Host colony") + scale_fill_manual(values=P21) + facet_grid( Time ~ Temperature)  + labs(title="CBASS")  +  theme( legend.key.size = unit(0.2, "cm"),legend.key.width = unit(0.2,"cm"), legend.position = 'bottom')
+dev.off() 
