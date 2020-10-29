@@ -1,0 +1,49 @@
+############################################################
+##################### phyloseq #############################
+############################################################
+library("phyloseq")
+library(ggplot2)
+library(reshape2)
+library(microbiome)
+
+setwd("/Users/anny/Documents/GitHub/RSS_16S/")
+
+otu.2=read.table("./inputFiles/RSS_OTU_table.txt", header = TRUE)
+colnames(otu.2)=gsub('\\.', '-', colnames(otu.2))
+map=read.table("./inputFiles/RSS_metadata.txt", header = TRUE, row.names = 1, sep ='\t')
+sha=read.table("shape_mapping.txt", header = FALSE,  sep ='\t')
+map$shape1=paste(map$Time,"-",map$Genotype, sep = "")
+
+tax = read.csv("./inputFiles/RSS.final.taxonomy", header = TRUE, sep = "\t", row.names = 1)
+tax$Taxonomy = gsub("[(0-9)]", "", tax$Taxonomy) 
+tax$Taxonomy = gsub("[a-z]__", "", tax$Taxonomy) 
+tax[c('Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species')] <- colsplit(tax$Taxonomy,';',c('Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species'))
+tax=tax[, -c(3)]
+
+otu.t= otu_table(otu.2, taxa_are_rows=TRUE)
+sam.t= sample_data(data.frame(map))
+tax.t= tax_table(as.matrix(tax))
+
+phy.all= phyloseq(otu.t, tax.t,  sam.t)
+
+##transform data and subset phyloseq objects
+phy.t=microbiome::transform(phy.all, transform = "clr", target = "OTU", shift = 0, scale = 1)
+cb=subset_samples(phy.t, Experiment=="CB")
+rss=subset_samples(phy.t, Experiment=="RSS")
+
+P4=c("#2E33D1", "#FFEE32","#D37D47", "#F43535") #27, 29, 32, 34
+cb_PCOA_br = ordinate(cb, method = "RDA", distance = "euclidean")
+c.p=plot_ordination(cb,cb_PCOA_br, color = "Temperature", shape = "shape1")  + geom_point(size = 3, alpha = 1) + theme_bw()  + ggtitle("CBASS") + theme(plot.title = element_text(hjust = 0.5)) + scale_colour_manual(values=P4) + scale_shape_manual(values=c(15, 16, 17, 18, 25, 0, 1, 2, 5, 6))
+
+#plot_ordination(cb,cb_PCOA_br, color = "Genotype", shape = "Temperature")  + geom_point(size = 3, alpha = 1) + theme_bw()  + ggtitle("CBASS") + theme(plot.title = element_text(hjust = 0.5)) +  scale_shape_manual(values=c(15, 16, 17, 18, 25, 0, 1, 2, 5, 6))
+
+
+rss_PCOA_br = ordinate(rss, method = "PCoA", distance = "euclidean")
+r.p=plot_ordination(rss,rss_PCOA_br, color = "Temperature", shape = "shape1")  + geom_point(size = 3, alpha = 1) + theme_bw()  + ggtitle("RSS") + theme(plot.title = element_text(hjust = 0.5)) + scale_colour_manual(values=P4) + scale_shape_manual(values=c(15, 16, 17, 18, 25, 0, 1, 2, 5, 6))
+
+pdf("CBASS_vs_RSS_ordination.pdf", onefile = TRUE, width=15,height=15)
+gridExtra::grid.arrange(c.p, r.p,  ncol=2)
+dev.off()
+
+write.table(cb_PCOA_br$vectors[,c(1,2)], "PCOA_bact_CBASS.txt", quote= FALSE, row.names = TRUE, sep = "\t" )
+write.table(rss_PCOA_br$vectors[,c(1,2)], "PCOA_bact_RSS.txt", quote= FALSE, row.names = TRUE, sep = "\t" )
